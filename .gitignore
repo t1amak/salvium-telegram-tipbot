@@ -1,0 +1,8 @@
+// .gitignore
+// config.php
+config.php
+*.log
+.DS_Store
+*.swp
+.vscode/
+.idea/
