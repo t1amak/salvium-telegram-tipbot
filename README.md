@@ -13,9 +13,10 @@ A PHP-based Telegram tip bot for the Salvium (Monero fork) cryptocurrency.
 
 ## Installation
 1. Clone the repo
-2. Update `config.php` with your RPC, DB, and Telegram Bot credentials
-3. Run `salvium_tipbot.php` as a Telegram webhook listener
-4. Schedule `salvium_tipbot_monitor.php` using `cron` for periodic checks
+2. Copy `config.sample.php` to `config.php` and fill in your credentials
+3. Update `config.php` with your RPC, DB, and Telegram Bot credentials
+4. Run `salvium_tipbot.php` as a Telegram webhook listener
+5. Schedule `salvium_tipbot_monitor.php` using `cron` for periodic checks
 
 ## Requirements
 - PHP 8.1+
