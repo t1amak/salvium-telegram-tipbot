@@ -1,5 +1,4 @@
 <?php
-
 // salvium_tipbot.php
 use Salvium\SalviumTipBotDB;
 use Salvium\SalviumWallet;

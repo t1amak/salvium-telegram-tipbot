@@ -93,6 +93,11 @@ class SalviumTipBotDB {
         $stmt->execute([$username, $telegramUserId]);
     }
 
+    public function upgradeTelegramUserId(int $oldId, int $newId): bool {
+        $stmt = $this->pdo->prepare("UPDATE users SET telegram_user_id = ? WHERE telegram_user_id = ?");
+        return $stmt->execute([$newId, $oldId]);
+    }
+
     public function getUserBySubaddress(string $subaddress): array|false {
         $stmt = $this->pdo->prepare("SELECT * FROM users WHERE salvium_subaddress = ?");
         $stmt->execute([$subaddress]);
