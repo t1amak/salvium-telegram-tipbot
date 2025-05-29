@@ -50,7 +50,8 @@ foreach ($withdrawals as $withdrawal) {
         sendMessage($withdrawal['user_id'], "Withdrawal of {$withdrawal['amount']} SAL sent. TxID: {$result['tx_hash']}");
     } else {
         $db->updateWithdrawalStatus($withdrawal['id'], 'failed');
-        sendMessage($withdrawal['user_id'], "Withdrawal failed. Please try again later or contact support.");
+        $db->updateUserTipBalance($withdrawal['user_id'], $withdrawal['amount'], 'add'); // <== Refund
+        sendMessage($withdrawal['user_id'], "Withdrawal failed. The amount has been returned to your balance. Please try again later or contact support.");
     }
 }
 
