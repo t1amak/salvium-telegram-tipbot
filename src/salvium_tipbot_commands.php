@@ -6,6 +6,13 @@ class SalviumTipBotCommands {
     private SalviumTipBotDB $db;
     private SalviumWallet $wallet;
     private array $config;
+    private array $commandAccess = [
+        'start'    => ['private'],
+        'deposit'  => ['private'],
+        'withdraw' => ['private'],
+        'balance'  => ['private'],
+        'tip'      => ['private', 'group', 'supergroup'],
+    ];
 
     public function __construct(SalviumTipBotDB $db, SalviumWallet $wallet, array $config) {
         $this->db = $db;
@@ -15,14 +22,24 @@ class SalviumTipBotCommands {
 
     public function handle(string $command, array $args, array $context): void {
         $method = 'cmd_' . ltrim($command, '/');
+
+        $cmdKey = ltrim($command, '/');
+        $allowedChats = $this->commandAccess[$cmdKey] ?? [];
+
+        if (!in_array($context['chat_type'], $allowedChats)) {
+            return; // not allowed
+        }
+
         if (method_exists($this, $method)) {
             $response = $this->$method($args, $context);
         } else {
-            //$response = "Unknown command.";
-            $response = "";
+            $response = ""; // Optional fallback
         }
 
-        sendMessage($context['chat_id'], $response);
+        if ($response) {
+            sendMessage($context['chat_id'], $response);
+        }
+
         $this->db->logMessage($context['chat_id'], $context['chat_name'], $context['username'], $context['raw'], $response);
     }
 

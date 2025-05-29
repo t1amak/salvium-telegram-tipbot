@@ -28,6 +28,7 @@ $command = strtolower($args[0] ?? '');
 $context = [
     'chat_id' => $message['chat']['id'],
     'chat_name' => $message['chat']['title'] ?? $message['chat']['first_name'] ?? '',
+    'chat_type' => $message['chat']['type'],
     'username' => $message['from']['username'] ?? '',
     'user_id' => (int) $message['from']['id'],
     'raw' => $message['text'] ?? '',
