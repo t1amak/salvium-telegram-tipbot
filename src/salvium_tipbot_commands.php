@@ -5,10 +5,12 @@ use Salvium\SalviumWallet;
 class SalviumTipBotCommands {
     private SalviumTipBotDB $db;
     private SalviumWallet $wallet;
+    private array $config;
 
-    public function __construct(SalviumTipBotDB $db, SalviumWallet $wallet) {
+    public function __construct(SalviumTipBotDB $db, SalviumWallet $wallet, array $config) {
         $this->db = $db;
         $this->wallet = $wallet;
+        $this->config = $config;
     }
 
     public function handle(string $command, array $args, array $context): void {
@@ -55,6 +57,11 @@ class SalviumTipBotCommands {
 
         list(, $address, $amount) = $args;
         $amount = (float) $amount;
+
+        if ($amount < $this->config['MIN_WITHDRAWAL_AMOUNT']) {
+            return "Withdrawal amount too low. Minimum is {$this->config['MIN_WITHDRAWAL_AMOUNT']} SAL.";
+        }
+
         $user = $this->db->getUserByTelegramId($ctx['user_id']);
 
         if (!$user || $user['tip_balance'] < $amount) return "Insufficient balance or invalid account.";
@@ -71,6 +78,11 @@ class SalviumTipBotCommands {
 
         list(, $targetUsername, $amount) = $args;
         $amount = (float)$amount;
+
+        if ($amount < $this->config['MIN_TIP_AMOUNT']) {
+            return "Tip too small. Minimum tip is {$this->config['MIN_TIP_AMOUNT']} SAL.";
+        }
+
         $sender = $this->db->getUserByTelegramId($ctx['user_id']);
         $recipient = $this->db->getUserByUsername(ltrim($targetUsername, '@'));
 

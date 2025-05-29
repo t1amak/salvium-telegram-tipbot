@@ -37,28 +37,41 @@ if ($incoming) {
 // Handle pending withdrawals
 $withdrawals = $db->getPendingWithdrawals();
 foreach ($withdrawals as $withdrawal) {
+    // Skip if amount too low
+    if ($withdrawal['amount'] < $config['MIN_WITHDRAWAL_AMOUNT']) {
+        $db->updateWithdrawalStatus($withdrawal['id'], 'failed');
+        sendMessage($withdrawal['user_id'], "Withdrawal amount too low. Minimum is {$config['MIN_WITHDRAWAL_AMOUNT']} SAL.");
+        continue;
+    }
+
+    $amountToSend = $withdrawal['amount'] - $config['WITHDRAWAL_FEE'];
     $result = $wallet->transfer([
         [
             'address' => $withdrawal['address'],
-            'amount' => (int)($withdrawal['amount'] * 1e8) // major to atomic
+            'amount' => (int)($amountToSend * 1e8)
         ]
     ]);
 
     if ($result && isset($result['tx_hash'])) {
         $db->updateWithdrawalTxid($withdrawal['id'], $result['tx_hash']);
         $db->updateWithdrawalStatus($withdrawal['id'], 'sent');
-        sendMessage($withdrawal['user_id'], "Withdrawal of {$withdrawal['amount']} SAL sent. TxID: {$result['tx_hash']}");
+        sendMessage($withdrawal['user_id'], "Withdrawal of {$amountToSend} SAL sent. Fee: {$config['WITHDRAWAL_FEE']} SAL. TxID: {$result['tx_hash']}");
     } else {
+        // Refund full amount including fee
         $db->updateWithdrawalStatus($withdrawal['id'], 'failed');
-        $db->updateUserTipBalance($withdrawal['user_id'], $withdrawal['amount'], 'add'); // <== Refund
-        sendMessage($withdrawal['user_id'], "Withdrawal failed. The amount has been returned to your balance. Please try again later or contact support.");
+        $db->updateUserTipBalance($withdrawal['user_id'], $withdrawal['amount'], 'add');
+        sendMessage($withdrawal['user_id'], "Withdrawal failed. {$withdrawal['amount']} SAL returned to your balance. Please try again later.");
     }
 }
+
 
 // Handle pending tips
 $users = [];
 $tips = $db->getAllPendingTips();
 foreach ($tips as $tip) {
+
+    if ($tip['amount'] < $config['MIN_TIP_AMOUNT']) continue; // skip small tips
+
     $recipientId = $tip['recipient_user_id'];
     if (!isset($users[$recipientId])) {
         $users[$recipientId] = $db->getUserByTelegramId($recipientId);

@@ -12,5 +12,9 @@ return [
     'DB_CHARSET' => 'utf8mb4',
 
     'TELEGRAM_BOT_TOKEN' => 'YOUR_TELEGRAM_BOT_TOKEN_HERE',
-    'IPV4_ONLY' => 1
+    'IPV4_ONLY' => 1,
+
+    'MIN_TIP_AMOUNT' => 0.2,
+    'MIN_WITHDRAWAL_AMOUNT' => 0.4,
+    'WITHDRAWAL_FEE' => 0.1
 ];

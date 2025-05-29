@@ -33,6 +33,6 @@ $context = [
     'raw' => $message['text'] ?? '',
 ];
 
-$handler = new SalviumTipBotCommands($db, $wallet);
+$handler = new SalviumTipBotCommands($db, $wallet, $config);
 $handler->handle($command, $args, $context);
 ?>
