@@ -12,4 +12,5 @@ return [
     'DB_CHARSET' => 'utf8mb4',
 
     'TELEGRAM_BOT_TOKEN' => 'YOUR_TELEGRAM_BOT_TOKEN_HERE',
+    'IPV4_ONLY' => 1
 ];

@@ -1,5 +1,3 @@
-// README.md
-/*
 # Salvium Tip Bot
 
 A PHP-based Telegram tip bot for the Salvium (Monero fork) cryptocurrency.
@@ -26,4 +24,3 @@ A PHP-based Telegram tip bot for the Salvium (Monero fork) cryptocurrency.
 
 ## License
 MIT
-*/

@@ -68,14 +68,25 @@ class SalviumWallet {
         return $result['addresses'] ?? false;
     }
 
-    public function transfer(array $destinations, int $mixin = 11, int $unlockTime = 0, bool $getTxKey = false, bool $doNotRelay = false): array|false {
+    public function transfer(array $destinations, int $accountIndex = 0, array $subaddrIndices = [0], int $priority = 0, int $ringSize = 16, bool $getTxKey = true): array|false {
         $params = [
-            'destinations' => $destinations,
-            'mixin' => $mixin,
-            'unlock_time' => $unlockTime,
-            'get_tx_key' => $getTxKey,
-            'do_not_relay' => $doNotRelay
+            'destinations' => array_map(function ($dest) {
+                return [
+                    'address' => $dest['address'],
+                    'amount' => (int)($dest['amount']), // already in atomic units
+                    'asset_type' => 'SAL1'
+                ];
+            }, $destinations),
+            'source_asset' => 'SAL1',
+            'dest_asset' => 'SAL1',
+            'tx_type' => 3,
+            'account_index' => $accountIndex,
+    //        'subaddr_indices' => $subaddrIndices,
+            'priority' => $priority,
+            'ring_size' => $ringSize,
+            'get_tx_key' => $getTxKey
         ];
+
         return $this->_callRpc('transfer', $params);
     }
 

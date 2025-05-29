@@ -63,12 +63,34 @@ class SalviumTipBotDB {
         FOREIGN KEY (sender_user_id) REFERENCES users(id),
         FOREIGN KEY (recipient_user_id) REFERENCES users(id)
     );
+
+    CREATE TABLE bot_log (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        chat_id BIGINT NOT NULL,
+        chat_name VARCHAR(255),
+        username VARCHAR(255),
+        message TEXT,
+        response TEXT,
+        logged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
     */
 
     public function getUserByTelegramId(int $telegramUserId): array|false {
         $stmt = $this->pdo->prepare("SELECT * FROM users WHERE telegram_user_id = ?");
         $stmt->execute([$telegramUserId]);
         return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    public function getUserByUsername(string $username): array|false {
+        $stmt = $this->pdo->prepare("SELECT * FROM users WHERE username = ?");
+        $stmt->execute([$username]);
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    public function updateUsername(int $telegramUserId, string $username): void {
+        $stmt = $this->pdo->prepare("UPDATE users SET username = ? WHERE telegram_user_id = ?");
+        $stmt->execute([$username, $telegramUserId]);
     }
 
     public function getUserBySubaddress(string $subaddress): array|false {
@@ -127,6 +149,11 @@ class SalviumTipBotDB {
         return $stmt->execute([$senderUserId, $recipientUserId, $amount, $channelId]);
     }
 
+    public function getAllPendingTips(): array {
+        $stmt = $this->pdo->query("SELECT * FROM tips WHERE status = 'pending'");
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
     public function getPendingTipsForUser(int $recipientUserId): array {
         $stmt = $this->pdo->prepare("SELECT * FROM tips WHERE recipient_user_id = ? AND status = 'pending'");
         $stmt->execute([$recipientUserId]);
@@ -143,5 +170,22 @@ class SalviumTipBotDB {
         $stmt = $this->pdo->query("SELECT * FROM withdrawals WHERE status = 'pending'");
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
+
+    public function logMessage(int $chatId, string $chatName, string $username, string $message, string $response): void {
+        try {
+            $sql = "INSERT INTO bot_log (chat_id, chat_name, username, message, response) VALUES (:chat_id, :chat_name, :username, :message, :response)";
+            $stmt = $this->pdo->prepare($sql);
+            $stmt->execute([
+                ':chat_id' => $chatId,
+                ':chat_name' => $chatName,
+                ':username' => $username,
+                ':message' => $message,
+                ':response' => $response,
+            ]);
+        } catch (PDOException $e) {
+            error_log("Error logging message: " . $e->getMessage());
+        }
+    }
+
 }
 ?>
