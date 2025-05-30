@@ -89,9 +89,21 @@ class SalviumTipBotDB {
     }
 
     public function updateUsername(int $telegramUserId, string $username): void {
+        // First, check if the username is already used by a different user
+        $stmt = $this->pdo->prepare("SELECT telegram_user_id FROM users WHERE username = ?");
+        $stmt->execute([$username]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($row && (int)$row['telegram_user_id'] !== $telegramUserId) {
+            // Username is used by another user, don't overwrite
+            return;
+        }
+
+        // Safe to update
         $stmt = $this->pdo->prepare("UPDATE users SET username = ? WHERE telegram_user_id = ?");
         $stmt->execute([$username, $telegramUserId]);
     }
+
 
     public function upgradeTelegramUserId(int $oldId, int $newId): bool {
         $stmt = $this->pdo->prepare("UPDATE users SET telegram_user_id = ? WHERE telegram_user_id = ?");
@@ -107,6 +119,57 @@ class SalviumTipBotDB {
     public function createUser(int $telegramUserId, string $subaddress): bool {
         $stmt = $this->pdo->prepare("INSERT INTO users (telegram_user_id, salvium_subaddress) VALUES (?, ?)");
         return $stmt->execute([$telegramUserId, $subaddress]);
+    }
+
+    public function ensureUserExists(
+        int $telegramId,
+        ?string $username,
+        callable $subaddressGenerator,
+        bool $allowSynthetic = false
+    ): array {
+        // 1. Try exact match by Telegram ID
+        $user = $this->getUserByTelegramId($telegramId);
+
+        // 2. Try upgrade from placeholder if matching username
+        if (!$user && $username) {
+            $placeholder = $this->getUserByUsername($username);
+
+            if ($placeholder && $placeholder['telegram_user_id'] < 1_000_000 && $telegramId !== 0) {
+                $this->upgradeTelegramUserId($placeholder['telegram_user_id'], $telegramId);
+                $user = $this->getUserByTelegramId($telegramId);
+            }
+            else if ($placeholder && $placeholder['telegram_user_id'] >= 1_000_000 && $telegramId === 0) {
+                $user = $this->getUserByTelegramId($placeholder['telegram_user_id']);
+            }
+
+        }
+
+
+        // 3. Still not found? Possibly create new user
+        if (!$user) {
+            $idToUse = $telegramId;
+
+            if ($telegramId === 0 && $username && $allowSynthetic) {
+                // Create synthetic ID
+                $clean = ltrim($username, '@');
+                $idToUse = 100_000 + (crc32($clean) % 900_000);
+            }
+
+            $existing = $this->getUserByTelegramId($idToUse);
+            if (!$existing) {
+                $sub = $subaddressGenerator();
+                if (!$sub) throw new RuntimeException("Failed to generate subaddress");
+                $this->createUser($idToUse, $sub);
+            }
+
+            if ($username) {
+                $this->updateUsername($idToUse, $username);
+            }
+
+            $user = $this->getUserByTelegramId($idToUse);
+        }
+
+        return $user;
     }
 
     public function updateUserTipBalance(int $userId, float $amount, string $operation = 'add'): bool {

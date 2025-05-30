@@ -45,18 +45,12 @@ class SalviumTipBotCommands {
     }
 
     private function cmd_start(array $args, array $ctx): string {
-        $user = $this->db->getUserByTelegramId($ctx['user_id']);
-
-        if (!$user) {
-            $sub = $this->wallet->getNewSubaddress();
-            if ($sub) {
-                $this->db->createUser($ctx['user_id'], $sub);
-
-                if (!empty($ctx['username'])) {
-                    $this->db->updateUsername($ctx['user_id'], $ctx['username']);
-                }
-            }
-        }
+        $this->db->ensureUserExists(
+            $ctx['user_id'],
+            $ctx['username'] ?? null,
+            fn() => $this->wallet->getNewSubaddress(),
+            false
+        );
 
         return "👋 Welcome to the Salvium Tip Bot!\n\n"
             . "You can use the following commands:\n"
@@ -69,33 +63,12 @@ class SalviumTipBotCommands {
     }
 
     private function cmd_deposit(array $args, array $ctx): string {
-        $user = $this->db->getUserByTelegramId($ctx['user_id']);
-
-        // If no exact match, attempt upgrade by matching username with placeholder
-        if (!$user && !empty($ctx['username'])) {
-            $user = $this->db->getUserByUsername($ctx['username']);
-
-            // Check if it's a placeholder user (telegram_user_id is synthetic)
-            if ($user && $user['telegram_user_id'] < 1000000) {
-                // Upgrade the telegram_user_id to the real one
-                $this->db->upgradeTelegramUserId($user['telegram_user_id'], $ctx['user_id']);
-                // Refresh user
-                $user = $this->db->getUserByTelegramId($ctx['user_id']);
-            }
-        }
-
-        // If still not found, create new user
-        if (!$user) {
-            $sub = $this->wallet->getNewSubaddress();
-            if (!$sub) return "Error generating subaddress.";
-            $this->db->createUser($ctx['user_id'], $sub);
-
-            if (!empty($ctx['username'])) {
-                $this->db->updateUsername($ctx['user_id'], $ctx['username']);
-            }
-
-            return "Your deposit address: $sub";
-        }
+        $user = $this->db->ensureUserExists(
+            $ctx['user_id'],
+            $ctx['username'] ?? null,
+            fn() => $this->wallet->getNewSubaddress(),
+            false
+        );
 
         return "Your deposit address: {$user['salvium_subaddress']}";
     }
@@ -143,32 +116,24 @@ class SalviumTipBotCommands {
         }
 
         $cleanUsername = ltrim($targetUsername, '@');
-        $recipient = $this->db->getUserByUsername($cleanUsername);
 
-        // If recipient not known, create placeholder
+        $recipient = $this->db->ensureUserExists(
+            0,
+            $cleanUsername,
+            fn() => $this->wallet->getNewSubaddress(),
+            true
+        );
 
         if (!$recipient) {
-            $syntheticId = 100000 + (crc32($cleanUsername) % 900000);
-            $subaddress = $this->wallet->getNewSubaddress();
-            if (!$subaddress) {
-                return "Failed to create deposit address for {$cleanUsername}.";
-            }
+            return "Failed to ensure recipient exists.";
+        }
 
-            $existing = $this->db->getUserByTelegramId($syntheticId);
+        $this->db->updateUserTipBalance($sender['id'], $amount, 'subtract');
+        $this->db->addTip($sender['id'], $recipient['id'], $amount, $ctx['chat_id']);
 
-            if (!$existing) {
-                if (!$this->db->createUser($syntheticId, $subaddress)) {
-                    return "Failed to create recipient account for {$cleanUsername}.";
-                }
-            }
-
-            // Ensure username is correct (could be NULL in DB even if user exists)
-            $this->db->updateUsername($syntheticId, $cleanUsername);
-
-            // Now safely fetch the recipient
-            $recipient = $this->db->getUserByUsername($cleanUsername);
-
-            // Notify group
+        if (!empty($recipient['telegram_user_id']) && $recipient['telegram_user_id'] > 0 && $recipient['telegram_user_id'] !== (100_000 + (crc32($cleanUsername) % 900_000))) {
+            sendMessage($recipient['telegram_user_id'], "You received a tip of {$amount} SAL! Use /balance to check.");
+        } else {
             sendMessage($ctx['chat_id'], "Hey @$cleanUsername, you just got a tip from @$ctx[username]!");
             sendGif(
                 $ctx['chat_id'],
@@ -177,30 +142,21 @@ class SalviumTipBotCommands {
             );
         }
 
-
-        $this->db->updateUserTipBalance($sender['id'], $amount, 'subtract');
-        $this->db->addTip($sender['id'], $recipient['id'], $amount, $ctx['chat_id']);
-
-        if (!empty($recipient['telegram_user_id']) && $recipient['telegram_user_id'] > 0 && $recipient['telegram_user_id'] != crc32($cleanUsername)) {
-            sendMessage($recipient['telegram_user_id'], "You received a tip of {$amount} SAL! Use /balance to check.");
-        }
-
         return "Tipped {$targetUsername} {$amount} SAL successfully!";
     }
+
 
     private function cmd_claim(array $args, array $ctx): string {
         $user = $this->db->getUserByUsername($ctx['username']);
 
-        if (!$user || $user['telegram_user_id'] > 1000000) {
+        if (!$user || $user['telegram_user_id'] > 1_000_000) {
             return "Nothing to claim or already claimed.";
         }
 
-        // Upgrade placeholder to real user ID
         $this->db->upgradeTelegramUserId($user['telegram_user_id'], $ctx['user_id']);
 
         return "Welcome @{$ctx['username']}, your account has been activated. You can now check your balance and receive tips!";
     }
-
 
 }
 ?>

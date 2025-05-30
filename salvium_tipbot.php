@@ -21,8 +21,21 @@ $update = json_decode(file_get_contents("php://input"), true);
 if (!$update || !isset($update['message'])) exit;
 
 $message = $update['message'];
-$args = explode(' ', trim($message['text'] ?? ''));
-$command = strtolower($args[0] ?? '');
+//$args = explode(' ', trim($message['text'] ?? ''));
+//$command = strtolower($args[0] ?? '');
+
+
+$text = trim($message['text'] ?? '');
+if (!str_starts_with($text, '/')) exit; // Only react to messages that start with '/'
+
+$args = explode(' ', $text);
+$command = strtolower($args[0]);
+
+// Strip optional @BotUsername (Telegram adds this in groups)
+if (str_contains($command, '@')) {
+    $command = explode('@', $command)[0];
+}
+
 
 $context = [
     'chat_id' => $message['chat']['id'],
