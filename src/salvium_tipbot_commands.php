@@ -146,27 +146,37 @@ class SalviumTipBotCommands {
         $recipient = $this->db->getUserByUsername($cleanUsername);
 
         // If recipient not known, create placeholder
+
         if (!$recipient) {
-            $syntheticId = 100000 + (crc32($cleanUsername) % 900000);// Use a consistent pseudo-ID
+            $syntheticId = 100000 + (crc32($cleanUsername) % 900000);
             $subaddress = $this->wallet->getNewSubaddress();
             if (!$subaddress) {
                 return "Failed to create deposit address for {$cleanUsername}.";
             }
 
             $existing = $this->db->getUserByTelegramId($syntheticId);
+
             if (!$existing) {
                 if (!$this->db->createUser($syntheticId, $subaddress)) {
                     return "Failed to create recipient account for {$cleanUsername}.";
                 }
-                $this->db->updateUsername($syntheticId, $cleanUsername);
             }
+
+            // Ensure username is correct (could be NULL in DB even if user exists)
+            $this->db->updateUsername($syntheticId, $cleanUsername);
+
+            // Now safely fetch the recipient
             $recipient = $this->db->getUserByUsername($cleanUsername);
 
-            // Send a message to the group telling recipient to DM bot
+            // Notify group
             sendMessage($ctx['chat_id'], "Hey @$cleanUsername, you just got a tip from @$ctx[username]!");
-            sendGif($ctx['chat_id'], 'CgACAgQAAxkBAAOQaDjcu6ftEKHp3ZCCKX8p6hTkqxEAAtYaAAL4YMlR4yZwk_GMuWg2BA', "DM me and run /claim to receive it.");
-
+            sendGif(
+                $ctx['chat_id'],
+                'CgACAgQAAxkBAAOQaDjcu6ftEKHp3ZCCKX8p6hTkqxEAAtYaAAL4YMlR4yZwk_GMuWg2BA',
+                "DM me and run /claim to receive it."
+            );
         }
+
 
         $this->db->updateUserTipBalance($sender['id'], $amount, 'subtract');
         $this->db->addTip($sender['id'], $recipient['id'], $amount, $ctx['chat_id']);
