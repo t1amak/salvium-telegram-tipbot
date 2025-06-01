@@ -127,6 +127,11 @@ class SalviumTipBotDB {
         callable $subaddressGenerator,
         bool $allowSynthetic = false
     ): array {
+
+        if (!$username || trim($username) === '' || $telegramId === 0 && !$allowSynthetic) {
+            throw new RuntimeException("Invalid username or telegram ID.");
+        }
+
         // 1. Try exact match by Telegram ID
         $user = $this->getUserByTelegramId($telegramId);
 

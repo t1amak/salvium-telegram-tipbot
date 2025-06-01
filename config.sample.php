@@ -16,5 +16,6 @@ return [
 
     'MIN_TIP_AMOUNT' => 0.2,
     'MIN_WITHDRAWAL_AMOUNT' => 0.4,
-    'WITHDRAWAL_FEE' => 0.1
+    'WITHDRAWAL_FEE' => 0.1,
+    'MAX_MULTI_TIPS' => 5
 ];
