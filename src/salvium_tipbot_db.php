@@ -4,6 +4,7 @@ namespace Salvium;
 
 use PDO;
 use PDOException;
+use RuntimeException;
 
 class SalviumTipBotDB {
     private PDO $pdo;
@@ -128,14 +129,24 @@ class SalviumTipBotDB {
         bool $allowSynthetic = false
     ): array {
 
-        if (!$username || trim($username) === '' || $telegramId === 0 && !$allowSynthetic) {
-            throw new RuntimeException("Invalid username or telegram ID.");
+        if ((empty($username) || trim($username) === '') && $telegramId === 0 && !$allowSynthetic) {
+            throw new RuntimeException("Invalid username or telegram ID. ".$username." x ".$telegramId);
         }
 
         // 1. Try exact match by Telegram ID
         $user = $this->getUserByTelegramId($telegramId);
 
-        // 2. Try upgrade from placeholder if matching username
+        // 2. Merge users if one user has 2 records - one with valid username and synthetic id and another one with valid telegram id and null username
+        if ($telegramId >= 1_000_000 && $username) {
+            $namedUser = $this->getUserByUsername($username);
+            if ($namedUser && $user && $namedUser['id'] !== $user['id']) {
+                $this->mergeUsers($fromId = $namedUser['id'], $intoId = $user['id']);
+                $this->updateUsername($telegramId, $username);
+                $user = $this->getUserByTelegramId($telegramId);
+            }
+        }
+
+        // 3. Try upgrade from placeholder if matching username
         if (!$user && $username) {
             $placeholder = $this->getUserByUsername($username);
 
@@ -148,9 +159,7 @@ class SalviumTipBotDB {
             }
 
         }
-
-
-        // 3. Still not found? Possibly create new user
+        // 4. Still not found? Possibly create new user
         if (!$user) {
             $idToUse = $telegramId;
 
@@ -175,6 +184,63 @@ class SalviumTipBotDB {
         }
 
         return $user;
+    }
+
+    public function mergeUsers(int $fromId, int $intoId): void {
+        $this->pdo->beginTransaction();
+
+        try {
+            // 1. Transfer all tips involving fromId to intoId
+            $this->pdo->prepare("UPDATE tips SET sender_user_id = ? WHERE sender_user_id = ?")
+                ->execute([$intoId, $fromId]);
+            $this->pdo->prepare("UPDATE tips SET recipient_user_id = ? WHERE recipient_user_id = ?")
+                ->execute([$intoId, $fromId]);
+
+            // 2. Transfer deposits
+            $this->pdo->prepare("UPDATE deposits SET user_id = ? WHERE user_id = ?")
+                ->execute([$intoId, $fromId]);
+
+            // 3. Transfer withdrawals
+            $this->pdo->prepare("UPDATE withdrawals SET user_id = ? WHERE user_id = ?")
+                ->execute([$intoId, $fromId]);
+
+            // 4. Recalculate balance
+            // Total deposits
+            $stmt = $this->pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM deposits WHERE user_id = ?");
+            $stmt->execute([$intoId]);
+            $totalDeposits = (float) $stmt->fetchColumn();
+
+            // Total tips received
+            $stmt = $this->pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM tips WHERE recipient_user_id = ?");
+            $stmt->execute([$intoId]);
+            $totalReceivedTips = (float) $stmt->fetchColumn();
+
+            // Total tips sent
+            $stmt = $this->pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM tips WHERE sender_user_id = ?");
+            $stmt->execute([$intoId]);
+            $totalSentTips = (float) $stmt->fetchColumn();
+
+            // Total successful withdrawals
+            $stmt = $this->pdo->prepare("SELECT COALESCE(SUM(amount), 0) FROM withdrawals WHERE user_id = ? AND status = 'sent'");
+            $stmt->execute([$intoId]);
+            $totalWithdrawals = (float) $stmt->fetchColumn();
+
+            // Final balance
+            $finalBalance = $totalDeposits + $totalReceivedTips - $totalSentTips - $totalWithdrawals;
+
+            // 5. Update user record with recalculated balance
+            $this->pdo->prepare("UPDATE users SET tip_balance = ? WHERE id = ?")
+                ->execute([$finalBalance, $intoId]);
+
+            // 6. Delete the placeholder user
+            $this->pdo->prepare("DELETE FROM users WHERE id = ?")
+                ->execute([$fromId]);
+
+            $this->pdo->commit();
+        } catch (Exception $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
     }
 
     public function updateUserTipBalance(int $userId, float $amount, string $operation = 'add'): bool {

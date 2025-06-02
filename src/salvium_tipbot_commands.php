@@ -73,7 +73,6 @@ class SalviumTipBotCommands {
         return "Your deposit address: {$user['salvium_subaddress']}";
     }
 
-
     private function cmd_balance(array $args, array $ctx): string {
         $user = $this->db->getUserByTelegramId($ctx['user_id']);
         return $user ? "Your balance: {$user['tip_balance']} SAL" : "No account found. Use /deposit first.";
@@ -99,100 +98,117 @@ class SalviumTipBotCommands {
         return "Withdrawal request submitted. Processing soon.";
     }
 
-
-private function cmd_tip(array $args, array $ctx): string {
-    if (count($args) < 3) {
-        return "Usage: /tip <user1> [user2 ...] <amount>";
-    }
-
-    $rawAmount = $args[count($args) - 1];
-    $amount = (float)$rawAmount;
-
-    if (!is_numeric($rawAmount) || $amount <= 0) {
-        return "Invalid tip amount.";
-    }
-
-    if ($amount < $this->config['MIN_TIP_AMOUNT']) {
-        return "Each tip must be at least {$this->config['MIN_TIP_AMOUNT']} SAL.";
-    }
-
-
-    $usernames = array_filter(array_slice($args, 1, -1), function($u) {
-        $u = trim($u);
-        return $u !== '' && $u !== '@';
-    });
-
-    $maxRecipients = $this->config['MAX_MULTI_TIPS'] ?? 1;
-
-    if (count($usernames) > $maxRecipients) {
-        return "You can tip up to {$maxRecipients} users at once.";
-    }
-
-    $sender = $this->db->getUserByTelegramId($ctx['user_id']);
-    $total = $amount * count($usernames);
-
-    if (!$sender || $sender['tip_balance'] < $total) {
-        return "Insufficient funds. You need at least {$total} SAL to tip these users.";
-    }
-
-    $successful = [];
-
-    foreach ($usernames as $targetUsername) {
-        $cleanUsername = trim(ltrim($targetUsername, '@'));
-
-        if ($cleanUsername === '' || !preg_match('/^[a-zA-Z0-9_]{5,32}$/', $cleanUsername)) {
-            continue; // skip invalid usernames
+    private function cmd_tip(array $args, array $ctx): string {
+        if (count($args) < 3) {
+            return "Usage: /tip <user1> [user2 ...] <amount>";
         }
 
-        try {
-            $recipient = $this->db->ensureUserExists(
-                0,
-                $cleanUsername,
-                fn() => $this->wallet->getNewSubaddress(),
-                true
-            );
+        $rawAmount = $args[count($args) - 1];
+        $amount = (float)$rawAmount;
 
-            if (!$recipient) continue;
+        if (!is_numeric($rawAmount) || $amount <= 0) {
+            return "Invalid tip amount.";
+        }
 
-            $this->db->updateUserTipBalance($sender['id'], $amount, 'subtract');
-            $this->db->addTip($sender['id'], $recipient['id'], $amount, $ctx['chat_id']);
-            $successful[] = $cleanUsername;
+        if ($amount < $this->config['MIN_TIP_AMOUNT']) {
+            return "Each tip must be at least {$this->config['MIN_TIP_AMOUNT']} SAL.";
+        }
 
-            if (!empty($recipient['telegram_user_id']) && $recipient['telegram_user_id'] > 0 && $recipient['telegram_user_id'] !== (100_000 + (crc32($cleanUsername) % 900_000))) {
-                sendMessage($recipient['telegram_user_id'], "You received a tip of {$amount} SAL! Use /balance to check.");
-            } else {
-                sendMessage($ctx['chat_id'], "Hey @$cleanUsername, you just got a tip from @$ctx[username]!");
-                sendGif(
-                    $ctx['chat_id'],
-                    'CgACAgQAAxkBAAOQaDjcu6ftEKHp3ZCCKX8p6hTkqxEAAtYaAAL4YMlR4yZwk_GMuWg2BA',
-                    "DM me and run /claim to receive it."
-                );
+
+        $usernames = array_filter(array_slice($args, 1, -1), function($u) {
+            $u = trim($u);
+            return $u !== '' && $u !== '@';
+        });
+
+        $maxRecipients = $this->config['MAX_MULTI_TIPS'] ?? 1;
+
+        if (count($usernames) > $maxRecipients) {
+            return "You can tip up to {$maxRecipients} users at once.";
+        }
+
+        $sender = $this->db->getUserByTelegramId($ctx['user_id']);
+        $total = $amount * count($usernames);
+
+        if (!$sender || $sender['tip_balance'] < $total) {
+            return "Insufficient funds. You need at least {$total} SAL to tip these users.";
+        }
+
+        $successful = [];
+
+        foreach ($usernames as $targetUsername) {
+            $cleanUsername = trim(ltrim($targetUsername, '@'));
+
+            if ($cleanUsername === '' || !preg_match('/^[a-zA-Z0-9_]{5,32}$/', $cleanUsername)) {
+                continue; // skip invalid usernames
             }
 
-        } catch (Throwable $e) {
-            // Silently skip
+            try {
+                $recipient = $this->db->ensureUserExists(
+                    0,
+                    $cleanUsername,
+                    fn() => $this->wallet->getNewSubaddress(),
+                    true
+                );
+
+                if (!$recipient) continue;
+
+                $this->db->updateUserTipBalance($sender['id'], $amount, 'subtract');
+                $this->db->addTip($sender['id'], $recipient['id'], $amount, $ctx['chat_id']);
+                $successful[] = $cleanUsername;
+
+                if (!empty($recipient['telegram_user_id']) && $recipient['telegram_user_id'] > 0 && $recipient['telegram_user_id'] !== (100_000 + (crc32($cleanUsername) % 900_000))) {
+                    sendMessage($recipient['telegram_user_id'], "You received a tip of {$amount} SAL! Use /balance to check.");
+                } else {
+                    sendMessage($ctx['chat_id'], "Hey @$cleanUsername, you just got a tip from @$ctx[username]!");
+                    sendGif(
+                        $ctx['chat_id'],
+                        'CgACAgQAAxkBAAOQaDjcu6ftEKHp3ZCCKX8p6hTkqxEAAtYaAAL4YMlR4yZwk_GMuWg2BA',
+                        "DM me and run /claim to receive it."
+                    );
+                }
+
+            } catch (Throwable $e) {
+                // Silently skip
+            }
         }
+
+        if (empty($successful)) {
+            return "Tip failed — no valid recipients.";
+        }
+
+        return "Tipped " . implode(', ', $successful) . " {$amount} SAL each!";
     }
-
-    if (empty($successful)) {
-        return "Tip failed — no valid recipients.";
-    }
-
-    return "Tipped " . implode(', ', $successful) . " {$amount} SAL each!";
-}
-
-
 
     private function cmd_claim(array $args, array $ctx): string {
-        $user = $this->db->getUserByUsername($ctx['username']);
-
-        if (!$user || $user['telegram_user_id'] > 1_000_000) {
-            return "Nothing to claim or already claimed.";
+        $username = $ctx['username'] ?? null;
+        if (!$username) {
+            return "You must set a Telegram username to claim tips.";
         }
 
-        $this->db->upgradeTelegramUserId($user['telegram_user_id'], $ctx['user_id']);
+        // Step 1: Check if a placeholder user exists with this username
+        $placeholder = $this->db->getUserByUsername($username);
+        $wasPlaceholder = $placeholder && $placeholder['telegram_user_id'] < 1_000_000;
 
-        return "Welcome @{$ctx['username']}, your account has been activated. You can now check your balance and receive tips!";
+        // Step 2: Run ensure logic (which may upgrade user)
+        $this->db->ensureUserExists(
+            $ctx['user_id'],
+            $username,
+            fn() => $this->wallet->getNewSubaddress(),
+            false
+        );
+
+        // Step 3: Fetch again to verify update
+        $user = $this->db->getUserByUsername($username);
+        if (!$user) {
+            return "Nothing to claim.";
+        }
+
+        // Step 4: Check if user was successfully upgraded
+        if ($wasPlaceholder && $user['telegram_user_id'] >= 1_000_000) {
+            return "Welcome @$username, your account has been activated. You can now check your balance and receive tips!";
+        }
+
+        return "Nothing to claim or already claimed.";
     }
 
 }
